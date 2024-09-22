@@ -18,6 +18,41 @@ var logChan = make(chan string, 100)
 
 func main() {
 
+	endpoint := os.Getenv("ENDPOINT")
+	if endpoint == "" {
+		logChan <- "ENDPOINT 未设置，请检查环境变量设置"
+		return
+	}
+	accessKeyID := os.Getenv("ACCESS_KEY_ID")
+	if accessKeyID == "" {
+		logChan <- "ACCESS_KEY_ID 未设置，请检查环境变量设置"
+		return
+	}
+	accessKeySecret := os.Getenv("ACCESS_KEY_SECRET")
+	if accessKeySecret == "" {
+		logChan <- "ACCESS_KEY_SECRET 未设置，请检查环境变量设置"
+		return
+	}
+
+	client, err := oss.New(endpoint, accessKeyID, accessKeySecret)
+	if err != nil {
+		logChan <- fmt.Sprintf("创建OSS客户端失败: %v", err)
+		return
+	}
+
+	bucketName := os.Getenv("BUCKET_NAME")
+
+	if bucketName == "" {
+		logChan <- "BUCKET_NAME 未设置，请检查环境变量设置"
+		return
+	}
+
+	bucket, err := client.Bucket(bucketName)
+	if err != nil {
+		logChan <- fmt.Sprintf("获取OSS Bucket失败: %v", err)
+		return
+	}
+
 	// 启动日志记录协程
 	go asyncLogger()
 
@@ -56,7 +91,7 @@ func main() {
 		time.Sleep(durationUntilNextBackup)
 
 		// 启动备份操作协程
-		go performBackup()
+		go performBackup(bucket)
 	}
 }
 
@@ -68,26 +103,8 @@ func asyncLogger() {
 }
 
 // performBackup 执行实际的备份操作并记录日志
-func performBackup() {
+func performBackup(bucket *oss.Bucket) {
 	logChan <- "开始备份操作"
-
-	endpoint := "Your own Endpoint"
-	accessKeyID := "Your own AccessKey ID"
-	accessKeySecret := "Your own AccessKey Secret"
-
-	client, err := oss.New(endpoint, accessKeyID, accessKeySecret)
-	if err != nil {
-		logChan <- fmt.Sprintf("创建OSS客户端失败: %v", err)
-		return
-	}
-
-	bucket, err := client.Bucket("Your own Bucket Name")
-	if err != nil {
-		logChan <- fmt.Sprintf("获取OSS Bucket失败: %v", err)
-		return
-	}
-
-	oss.BuildLifecycleRuleByDays("", "", false, 7)
 
 	pr, pw := io.Pipe()
 
@@ -106,7 +123,7 @@ func performBackup() {
 	fileName := fmt.Sprintf("backups/docker_%s.tar.gz", now)
 
 	// 上传操作
-	err = bucket.PutObject(fileName, pr)
+	err := bucket.PutObject(fileName, pr)
 	if err != nil {
 		logChan <- fmt.Sprintf("上传文件失败: %v", err)
 		return
